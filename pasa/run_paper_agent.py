@@ -37,13 +37,26 @@ parser.add_argument('--search_papers',  type=int, default=10)
 parser.add_argument('--expand_papers',  type=int, default=20)
 parser.add_argument('--threads_num',    type=int, default=20)
 parser.add_argument('--search_backend', type=str, default=os.getenv("PASA_SEARCH_BACKEND", "google"), choices=["google", "openalex", "hybrid"])
+parser.add_argument('--low_vram',       action='store_true', help='Load crawler and selector lazily so only one 7B model occupies GPU memory at a time.')
+parser.add_argument('--model_device',   type=str, default=os.getenv("PASA_MODEL_DEVICE", "cuda:0"))
+parser.add_argument('--max_samples',    type=int, default=0, help='Run only the first N samples. Use 0 for the full input file.')
 args = parser.parse_args()
 
-crawler = Agent(args.crawler_path)
-selector = Agent(args.selector_path)
+if args.low_vram:
+    os.environ["PASA_LOW_VRAM"] = "1"
+    if args.threads_num != 1:
+        print("low_vram mode: forcing --threads_num 1 to avoid concurrent model swaps")
+        args.threads_num = 1
+
+os.makedirs(args.output_folder, exist_ok=True)
+
+crawler = Agent(args.crawler_path, low_vram=args.low_vram, model_device=args.model_device)
+selector = Agent(args.selector_path, low_vram=args.low_vram, model_device=args.model_device)
 
 with open(args.input_file) as f:
     for idx, line in enumerate(f.readlines()):
+        if args.max_samples and idx >= args.max_samples:
+            break
         data = json.loads(line)
         end_date = data['source_meta']['published_time']
         end_date = datetime.strptime(end_date, "%Y%m%d") - timedelta(days=7)
@@ -66,4 +79,5 @@ with open(args.input_file) as f:
         paper_agent.run()
         
         if args.output_folder != "":
-            json.dump(paper_agent.root.todic(), open(os.path.join(args.output_folder, f"{idx}.json"), "w"), indent=2)
+            with open(os.path.join(args.output_folder, f"{idx}.json"), "w") as fw:
+                json.dump(paper_agent.root.todic(), fw, indent=2)

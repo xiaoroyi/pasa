@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import re
+import os
 import json
 import threading
 from paper_node import PaperNode
@@ -124,7 +125,8 @@ class PaperAgent:
         prompt = self.prompts["generate_query"].format(user_query=self.user_query).strip()
         queries = self.crawler.infer(prompt)
         queries = [q.strip() for q in re.findall(self.templates["search_template"], queries, flags=re.DOTALL)][:self.search_queries]
-        PaperAgent.do_parallel(self.search_paper, (queries,), len(queries))
+        worker_num = 1 if os.getenv("PASA_LOW_VRAM", "0") == "1" else len(queries)
+        PaperAgent.do_parallel(self.search_paper, (queries,), worker_num)
 
     def get_paper_content(self, new_expand, crawl_prompts, have_full_paper):
         while new_expand:
@@ -135,6 +137,9 @@ class PaperAgent:
                     break
             
             if paper.sections == "":
+                if str(paper.arxiv_id).startswith("openalex:"):
+                    paper.extra["expand"] = "skip non-arxiv openalex paper"
+                    continue
                 paper.sections = search_section_by_arxiv_id(paper.arxiv_id, self.templates["cite_template"])
                 if not paper.sections:
                     paper.extra["expand"] = "get full paper error"
