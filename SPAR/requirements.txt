@@ -1,7 +1,12 @@
-dataclasses
 func_timeout
 cachetools
 openai
 biopython
 graphviz
-sqlite3
+fastapi
+uvicorn
+pydantic
+requests
+arxiv
+numpy
+tqdm

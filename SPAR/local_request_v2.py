@@ -4,6 +4,7 @@
 # [Author]       : shixiaofeng
 # [Descriptions] :
 # ==================================================================
+import os
 import requests
 import json
 import time
@@ -43,9 +44,34 @@ class ModelConfig:
     openai_client: Optional[Any] = None
 
 
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+
+
+def build_deepseek_config(model_name: str) -> ModelConfig:
+    return ModelConfig(
+        url=DEEPSEEK_BASE_URL,
+        max_len=int(os.getenv("DEEPSEEK_MAX_TOKENS", "8192")),
+        model_name=model_name,
+        temperature=float(os.getenv("DEEPSEEK_TEMPERATURE", "0.7")),
+        top_p=float(os.getenv("DEEPSEEK_TOP_P", "0.9")),
+        openai_client=OpenAI(
+            api_key=DEEPSEEK_API_KEY or "EMPTY",
+            base_url=DEEPSEEK_BASE_URL,
+        ),
+    )
+
+
 # Model configurations
 # buid your model locally, and set the url
 MODEL_CONFIGS = {
+
+    "deepseek-chat": build_deepseek_config(
+        os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    ),
+    "deepseek-reasoner": build_deepseek_config("deepseek-reasoner"),
+    "deepseek-v4-flash": build_deepseek_config("deepseek-v4-flash"),
+    "deepseek-v4-pro": build_deepseek_config("deepseek-v4-pro"),
 
     "llama3-70b": ModelConfig(
         url="http://0.0.0.0:9087/v1/chat/completions",
@@ -138,6 +164,8 @@ class LLMClient:
     ) -> Optional[str]:
         """Make HTTP request with caching"""
         try:
+            if data["model"].startswith("deepseek"):
+                return self._make_openai_compatible_request(data)
             if "Qwen3" in data["model"]:  # 判断是否使用 Qwen3-32B 模型
                 return self._make_qwen3_request(data)
             else:
@@ -146,6 +174,32 @@ class LLMClient:
                 return response.json()["choices"][0]["message"]["content"]
         except Exception as e:
             logger.error(f"Request failed: {str(e)}")
+            return None
+
+    def _make_openai_compatible_request(self, data: Dict[str, Any]) -> Optional[str]:
+        """Handle hosted OpenAI-compatible models such as DeepSeek."""
+        try:
+            config = MODEL_CONFIGS[data["model"]]
+            if not config.openai_client:
+                raise ValueError(
+                    f"OpenAI-compatible client is not configured for {data['model']}"
+                )
+            if not DEEPSEEK_API_KEY:
+                raise ValueError("DEEPSEEK_API_KEY is not set")
+
+            chat_response = config.openai_client.chat.completions.create(
+                model=config.model_name,
+                messages=data["messages"],
+                temperature=data.get("temperature", config.temperature),
+                top_p=data.get("top_p", config.top_p),
+                max_tokens=min(data.get("max_tokens", config.max_len), config.max_len),
+                stream=False,
+            )
+            return chat_response.choices[0].message.content
+        except Exception as e:
+            logger.error(
+                f"OpenAI-compatible request failed: {str(e)}--{traceback.format_exc()}"
+            )
             return None
 
     def _make_qwen3_request(self, data: Dict[str, Any]) -> Optional[str]:
