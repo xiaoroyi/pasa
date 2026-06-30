@@ -45,3 +45,20 @@ runs/
 *.tar.gz
 *.rar
 *.7z
+
+# AutoDL system folders
+.autodl/
+.Trash-0/
+
+# root large folders
+dataset/
+model/
+transformers/
+
+# PaSa large folders
+pasa/data/
+pasa/checkpoints/
+pasa/outputs/
+pasa/.cache/
+pasa/__pycache__/
+pasa/.ipynb_checkpoints/
