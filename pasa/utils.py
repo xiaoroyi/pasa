@@ -19,6 +19,7 @@ Please note that:
    If there are any bugs or improvement suggestions, you can submit pull requests.
    We would greatly appreciate and look forward to your contributions!!
 """
+import os
 import re
 import bs4
 import json
@@ -30,7 +31,8 @@ import requests
 from datetime   import datetime
 warnings.simplefilter("always")
 
-GOOGLE_KEY   = 'c73805b069b863c2e48bb65b48c4dafbf8eaa90c'
+GOOGLE_KEY = os.getenv("GOOGLE_SERPER_KEY", "your google keys")
+OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "")
 arxiv_client = arxiv.Client(delay_seconds = 0.05)
 id2paper     = json.load(open("data/paper_database/id2paper.json"))
 paper_db     = zipfile.ZipFile("data/paper_database/cs_paper_2nd.zip", "r")
@@ -73,6 +75,143 @@ def google_search_arxiv_id(query, num=10, end_date=None):
             warnings.warn(f"google search failed, query: {query}")
             continue
     return []
+
+def _abstract_from_inverted_index(inverted_index):
+    if not inverted_index:
+        return ""
+    words = []
+    for word, positions in inverted_index.items():
+        for position in positions:
+            words.append((position, word))
+    return " ".join(word for _, word in sorted(words))
+
+def _extract_arxiv_id_from_openalex_work(work):
+    candidates = []
+    ids = work.get("ids") or {}
+    candidates.extend(str(value) for value in ids.values() if value)
+    open_access = work.get("open_access") or {}
+    candidates.extend(
+        str(open_access.get(key, ""))
+        for key in ["oa_url", "landing_page_url", "pdf_url"]
+    )
+    primary_location = work.get("primary_location") or {}
+    candidates.extend(
+        str(primary_location.get(key, ""))
+        for key in ["landing_page_url", "pdf_url"]
+    )
+    for location in work.get("locations") or []:
+        candidates.extend(
+            str(location.get(key, ""))
+            for key in ["landing_page_url", "pdf_url"]
+        )
+
+    for candidate in candidates:
+        match = re.search(r"arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d+)", candidate)
+        if match:
+            return match.group(1).split("v")[0]
+    return ""
+
+def openalex_search_papers(query, num=10, end_date=None):
+    """Search OpenAlex and return paper dicts compatible with PaperAgent."""
+    base_url = "https://api.openalex.org/works"
+    params = {
+        "search": query,
+        "sort": "cited_by_count:desc",
+        "per-page": min(max(num * 3, num), 50),
+        "page": 1,
+    }
+    filters = ["open_access.is_oa:true"]
+    if end_date:
+        try:
+            year = datetime.strptime(end_date, "%Y%m%d").year
+            filters.append(f"publication_year:<{year}")
+        except Exception:
+            pass
+    if filters:
+        params["filter"] = ",".join(filters)
+    if OPENALEX_API_KEY:
+        params["api_key"] = OPENALEX_API_KEY
+
+    papers = []
+    seen = set()
+    for _ in range(3):
+        try:
+            response = requests.get(base_url, params=params, timeout=20)
+            if response.status_code != 200:
+                warnings.warn(
+                    f"openalex search failed: {response.status_code}, query: {query}"
+                )
+                continue
+            for work in response.json().get("results", []):
+                title = work.get("title") or ""
+                abstract = _abstract_from_inverted_index(
+                    work.get("abstract_inverted_index")
+                )
+                if not title or not abstract:
+                    continue
+
+                arxiv_id = _extract_arxiv_id_from_openalex_work(work)
+                if arxiv_id:
+                    paper = search_paper_by_arxiv_id(arxiv_id)
+                    if paper is not None:
+                        paper["source"] = paper["source"] + "+OpenAlex"
+                    else:
+                        paper = {
+                            "arxiv_id": arxiv_id,
+                            "title": title.replace("\n", " "),
+                            "abstract": abstract.replace("\n", " "),
+                            "sections": "",
+                            "source": "SearchFrom:openalex_arxiv",
+                        }
+                else:
+                    openalex_id = (work.get("id") or "").split("/")[-1]
+                    if not openalex_id:
+                        openalex_id = keep_letters(title)[:80]
+                    paper = {
+                        "arxiv_id": f"openalex:{openalex_id}",
+                        "title": title.replace("\n", " "),
+                        "abstract": abstract.replace("\n", " "),
+                        "sections": "",
+                        "source": "SearchFrom:openalex",
+                    }
+
+                if paper["arxiv_id"] in seen:
+                    continue
+                seen.add(paper["arxiv_id"])
+                papers.append(paper)
+                if len(papers) >= num:
+                    return papers
+            return papers
+        except requests.RequestException as e:
+            warnings.warn(f"openalex search error: {e}, query: {query}")
+    return papers
+
+def search_papers_by_backend(query, num=10, end_date=None, backend="google"):
+    backend = backend.lower()
+    if backend == "openalex":
+        return openalex_search_papers(query, num, end_date)
+
+    papers = []
+    seen = set()
+    if backend == "hybrid":
+        for paper in openalex_search_papers(query, num, end_date):
+            papers.append(paper)
+            seen.add(paper["arxiv_id"])
+            if len(papers) >= num:
+                return papers
+
+    arxiv_ids = google_search_arxiv_id(query, num, end_date)
+    for arxiv_id in arxiv_ids:
+        arxiv_id = arxiv_id.split("v")[0]
+        if arxiv_id in seen:
+            continue
+        paper = search_paper_by_arxiv_id(arxiv_id)
+        if paper is not None:
+            papers.append(paper)
+            seen.add(arxiv_id)
+        if len(papers) >= num:
+            break
+    return papers
 
 def parse_metadata(metas):
     """

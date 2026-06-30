@@ -36,6 +36,7 @@ parser.add_argument('--search_queries', type=int, default=5)
 parser.add_argument('--search_papers',  type=int, default=10)
 parser.add_argument('--expand_papers',  type=int, default=20)
 parser.add_argument('--threads_num',    type=int, default=20)
+parser.add_argument('--search_backend', type=str, default=os.getenv("PASA_SEARCH_BACKEND", "google"), choices=["google", "openalex", "hybrid"])
 args = parser.parse_args()
 
 crawler = Agent(args.crawler_path)
@@ -56,7 +57,8 @@ with open(args.input_file) as f:
             search_queries = args.search_queries,
             search_papers  = args.search_papers,
             expand_papers  = args.expand_papers,
-            threads_num    = args.threads_num
+            threads_num    = args.threads_num,
+            search_backend = args.search_backend,
         )
         if "answer" in data:
             paper_agent.root.extra["answer"] = data["answer"]

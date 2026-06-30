@@ -19,8 +19,7 @@ from models     import Agent
 from datetime   import datetime
 from utils      import (
     search_paper_by_title,
-    google_search_arxiv_id,
-    search_paper_by_arxiv_id,
+    search_papers_by_backend,
     search_section_by_arxiv_id
 )
 
@@ -37,6 +36,7 @@ class PaperAgent:
         search_papers:  int = 10, # per query
         expand_papers:  int = 20, # per layer
         threads_num:    int = 20, # number of threads in parallel at the same time
+        search_backend: str = "google",
     ) -> None:
         self.user_query = user_query
         self.crawler    = crawler
@@ -58,6 +58,7 @@ class PaperAgent:
         self.search_papers   = search_papers
         self.expand_papers   = expand_papers
         self.threads_num     = threads_num
+        self.search_backend  = search_backend
         self.papers_queue    = []
         self.expand_start    = 0
         self.lock            = threading.Lock()
@@ -81,14 +82,19 @@ class PaperAgent:
         while queries:
             with self.lock:
                 query, self.root.child[query] = queries.pop(), []
-            pre_arxiv_ids, searched_papers = google_search_arxiv_id(query, self.search_papers, self.end_date), []
-            for arxiv_id in pre_arxiv_ids:
-                arxiv_id = arxiv_id.split('v')[0]
+            pre_papers = search_papers_by_backend(
+                query,
+                self.search_papers,
+                self.end_date,
+                self.search_backend,
+            )
+            searched_papers = []
+            for paper in pre_papers:
+                arxiv_id = paper["arxiv_id"].split('v')[0]
                 self.lock.acquire()
                 if arxiv_id not in self.root.extra["touch_ids"]:
                     self.root.extra["touch_ids"].append(arxiv_id)
                     self.lock.release()
-                    paper = search_paper_by_arxiv_id(arxiv_id)
                     if paper is not None:
                         searched_papers.append(paper)
                 else:
