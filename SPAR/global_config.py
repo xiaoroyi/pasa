@@ -101,8 +101,12 @@ LLM_PARREL_NUM=2
 # NETWORK CONFIGURATION
 # =============================================================================
 PROXIES: Dict[str, str] = {
-    "http": os.getenv("HTTP_PROXY", "http://localhost:1080"),
-    "https": os.getenv("HTTPS_PROXY", "http://localhost:1080")
+    scheme: value
+    for scheme, value in {
+        "http": os.getenv("HTTP_PROXY", ""),
+        "https": os.getenv("HTTPS_PROXY", ""),
+    }.items()
+    if value
 }
 
 # ArXiv client configuration

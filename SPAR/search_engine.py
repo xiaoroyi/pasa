@@ -561,9 +561,9 @@ def _generate_query_from_reference(
             return output
         except:
             logger.error(
-                f"Failed to parse response: {response}, will retry {SLEPP_TIME_LLM} seconds...; Error: {traceback.format_exc()}"
+                f"Failed to parse response: {response}, will retry {SLEEP_TIME_LLM} seconds...; Error: {traceback.format_exc()}"
             )
-            time.sleep(SLEPP_TIME_LLM)
+            time.sleep(SLEEP_TIME_LLM)
     return []
 
 
@@ -826,7 +826,7 @@ class AcademicTreeSearchEngine:
                     logger.warning(
                         f"LLM analysis failed (attempt {attempt+1}): {str(e)}"
                     )
-                    time.sleep(SLEPP_TIME_LLM)
+                    time.sleep(SLEEP_TIME_LLM)
 
             logger.error("All attempts to analyze query intent failed")
             return None
@@ -863,7 +863,7 @@ class AcademicTreeSearchEngine:
                     logger.warning(
                         f"LLM expansion evaluation failed (attempt {attempt+1}): {str(e)}"
                     )
-                    time.sleep(SLEPP_TIME_LLM)
+                    time.sleep(SLEEP_TIME_LLM)
 
             logger.error("All attempts to evaluate expansion need failed")
             return None
@@ -998,7 +998,7 @@ class AcademicTreeSearchEngine:
                     logger.warning(
                         f"LLM expansion failed (attempt {attempt+1}): {str(e)}"
                     )
-                    time.sleep(SLEPP_TIME_LLM)
+                    time.sleep(SLEEP_TIME_LLM)
 
             # If we tried all attempts but still have a valid best response, return it
             if best_response and len(best_response) > 0:

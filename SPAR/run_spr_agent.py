@@ -17,6 +17,7 @@ from global_config import (
     DO_FUSION_JUDGE,
     DO_REFERENCE_SEARCH,
     FUSION_TEMPLATE,
+    LLM_MODEL_NAME,
     SEARCH_ROUTES,
 )
 from pipeline_spar import AcademicSearchTree
@@ -56,6 +57,22 @@ def parse_args():
     )
     parser.add_argument("--skip_visualization", action="store_true")
     return parser.parse_args()
+
+
+def validate_runtime_config():
+    errors = []
+    if LLM_MODEL_NAME.lower().startswith("deepseek") and not os.getenv(
+        "DEEPSEEK_API_KEY"
+    ):
+        errors.append("DEEPSEEK_API_KEY is not set")
+    if "arxiv" in SEARCH_ROUTES:
+        serper_key = os.getenv("GOOGLE_SERPER_KEY", "")
+        if not serper_key or serper_key in {"xxx", "your google keys"}:
+            errors.append(
+                "GOOGLE_SERPER_KEY is required because the arxiv route uses Serper"
+            )
+    if errors:
+        raise SystemExit("Configuration error:\n- " + "\n- ".join(errors))
 
 
 def default_output_folder(args):
@@ -106,6 +123,7 @@ def benchmark_end_date(row, enabled):
 
 def main():
     args = parse_args()
+    validate_runtime_config()
     src_file = BENCHMARKS[args.benchmark]
     output_folder = args.output_folder or default_output_folder(args)
     os.makedirs(output_folder, exist_ok=True)

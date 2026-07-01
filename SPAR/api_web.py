@@ -805,10 +805,11 @@ def google_search_arxiv_id(query, try_num=4, num=10, end_date=""):
         }
     )
 
-    GOOGLE_SERPER_KEY = os.getenv("GOOGLE_SERPER_KEY", "xxx")
-    logger.info(f"use GOOGLE_SERPER_KEY: {GOOGLE_SERPER_KEY}")
+    GOOGLE_SERPER_KEY = os.getenv("GOOGLE_SERPER_KEY", "")
+    if not GOOGLE_SERPER_KEY or GOOGLE_SERPER_KEY in {"xxx", "your google keys"}:
+        raise RuntimeError("GOOGLE_SERPER_KEY is not set")
+    logger.info("Using configured GOOGLE_SERPER_KEY")
     headers = {"X-API-KEY": GOOGLE_SERPER_KEY, "Content-Type": "application/json"}
-    assert headers["X-API-KEY"] != "your google keys", "add your google search key!!!"
 
     for _ in range(try_num):
         try:
@@ -821,7 +822,9 @@ def google_search_arxiv_id(query, try_num=4, num=10, end_date=""):
                 arxiv_id_list = []
                 for paper in results["organic"]:
                     link = paper["link"]
-                    match = re.search("arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d+)", link)
+                    match = re.search(
+                        r"arxiv\.org/(?:abs|pdf|html)/(\d{4}\.\d+)", link
+                    )
                     if match:
                         arxiv_id = match.group(1)
                         arxiv_id_list.append(arxiv_id)
