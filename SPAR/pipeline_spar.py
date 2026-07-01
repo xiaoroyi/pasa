@@ -241,13 +241,13 @@ class AcademicSearchTree:
                 sources = expanded_info["suitable_sources"]
                 logger.info(f"Using suitable sources from query expansion: {sources}")
             else:
-                sources = SEARCH_ROUTE
+                sources = SEARCH_ROUTES
                 logger.info(
                     f"No suitable_sources found in expanded_queries_info, using default: {sources}"
                 )
         else:
             # Use default sources based on depth
-            sources = SEARCH_ROUTE if current_depth == 1 else ["arxiv"]
+            sources = SEARCH_ROUTES if current_depth == 1 else ["arxiv"]
             logger.info(f"Using depth-based sources: {sources}")
 
         if "arxiv" not in sources:

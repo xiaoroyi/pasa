@@ -1,150 +1,184 @@
-# !/usr/bin/env python
-# -*- coding:utf-8 -*-
-# ==================================================================
-# [Author]       : shixiaofeng
-# [Descriptions] :
-# ==================================================================
+#!/usr/bin/env python3
+"""Run SPAR over a benchmark and save one search tree per query."""
 
-import json
-from datetime import datetime, timedelta
-
-import json
-from tqdm import tqdm
-import os
-import traceback
-import random
-from global_config import (
-    LLM_MODEL_NAME,
-    DO_REFERENCE_
-    DO_FUSION_JUDGE,
-    FUSION_TEMP,
-    SEARCH_ROUTE,
-)
-import sys
+import argparse
 import glob
-from utils import get_md5
+import json
+import os
+import random
 import shutil
-from pipeline_spar import AcademicSearchTree
+import traceback
+from datetime import datetime, timedelta
+from pathlib import Path
 
-file_lst = [
+from tqdm import tqdm
+
+from global_config import (
+    DO_FUSION_JUDGE,
+    DO_REFERENCE_SEARCH,
+    FUSION_TEMPLATE,
+    SEARCH_ROUTES,
+)
+from pipeline_spar import AcademicSearchTree
+from utils import get_md5
+
+
+BENCHMARKS = {
+    "AutoScholarQuery": "./benchmark/AutoScholarQuery_test.jsonl",
+    "SPARBench": "./benchmark/spar_bench.jsonl",
+    # Backward-compatible name used by the original README.
+    "OwnBenchmark": "./benchmark/spar_bench.jsonl",
+}
+
+SOURCE_FILES = [
     "./global_config.py",
     "./instruction.py",
     "./run_spr_agent.py",
     "./search_engine.py",
     "./api_web.py",
-    "./pipeline_spar.py"
+    "./pipeline_spar.py",
 ]
 
-sample_num = 2000
-score_thresh = 0.5
-max_depth = 2
-relevance_doc_num = 10
 
-benchmark_map = {
-    "AutoScholarQuery": {
-        "src_file": "./benchmark/AutoScholarQuery_test.jsonl",
-        "select_file": f"./benchmark/AutoScholarQuery_test_select_{sample_num}.jsonl",
-    },
-    "OwnBenchmark": {
-        "src_file": "./benchmark/spar_bench.jsonl",
-        "select_file": f"code_official/benchmark/spar_bench_select_{sample_num}.jsonl"
-
-    },
-}
-
-benchmark_name = "AutoScholarQuery"
-# benchmark_name = "OwnBenchmark"
-
-benchmark_name = sys.argv[1]
-
-src_file = benchmark_map[benchmark_name]["src_file"]
-select_file = benchmark_map[benchmark_name]["select_file"]
-print(f"select_file: {select_file}")
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("benchmark", choices=BENCHMARKS)
+    parser.add_argument("--sample_num", type=int, default=2000)
+    parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--score_thresh", type=float, default=0.5)
+    parser.add_argument("--max_depth", type=int, default=2)
+    parser.add_argument("--max_docs", type=int, default=10)
+    parser.add_argument("--output_folder")
+    parser.add_argument(
+        "--use_end_date",
+        action="store_true",
+        help="Apply the benchmark publication date minus seven days.",
+    )
+    parser.add_argument("--skip_visualization", action="store_true")
+    return parser.parse_args()
 
 
-output_folder = f"./gen_result/{benchmark_name}_{sample_num}_msearch_{'-'.join(SEARCH_ROUTE)}_depth{max_depth}_do_reference_{DO_REFERENCE_SEARCH}_query_judge_{DO_FUSION_JUDGE}_fusion_{FUSION_TEMP}_no_enddate_no_autocorrect_pasa_score_{score_thresh}"  # 加上query fusion
-
-print(f"output_folder: {output_folder}")
-
-os.makedirs(output_folder, exist_ok=True)
-
-
-search_agent = AcademicSearchTree(
-    max_depth=max_depth, max_docs=relevance_doc_num, similarity_threshold=score_thresh
-)
-
-
-for one in file_lst:
-    shutil.copy2(one, output_folder)
-
-already = {}
-for one in glob.glob(f"{output_folder}/*.json"):
-    with open(one, "r") as fr:
-        info = json.load(fr)
-    question = info["search_query"]
-    already[question] = one
-
-with open(src_file, "r") as f:
-    if src_file.endswith(".jsonl"):
-        lines = f.readlines()
-        random.seed(123)
-        random.shuffle(lines)
-        lines = lines[:sample_num]
-    elif src_file.endswith(".json"):
-        lines = json.load(f)
-    print(f"lines: {len(lines)}")
-
-    with open(select_file,"w") as fw:
-        for one in lines:
-            fw.write(one.strip() + "\n")
+def default_output_folder(args):
+    route_name = "-".join(SEARCH_ROUTES)
+    return (
+        f"./gen_result/{args.benchmark}_{args.sample_num}"
+        f"_msearch_{route_name}"
+        f"_depth{args.max_depth}"
+        f"_do_reference_{DO_REFERENCE_SEARCH}"
+        f"_query_judge_{DO_FUSION_JUDGE}"
+        f"_fusion_{FUSION_TEMPLATE}"
+        f"_enddate_{args.use_end_date}"
+        f"_score_{args.score_thresh}"
+    )
 
 
-    for idx, line in tqdm(enumerate(lines), total=len(lines), desc="Processing lines"):
+def load_benchmark(path, sample_num, seed):
+    with open(path, "r", encoding="utf-8") as handle:
+        rows = [json.loads(line) for line in handle if line.strip()]
+    random.Random(seed).shuffle(rows)
+    return rows[:sample_num] if sample_num > 0 else rows
+
+
+def result_index(output_folder):
+    already = {}
+    for path in glob.glob(os.path.join(output_folder, "*.json")):
         try:
-            if isinstance(line, str):
-                data = json.loads(line)
-                question = data["question"]
-            elif isinstance(line, dict):
-                data = line
-                question = data["query"]
-            else:
-                data = {}
-                question = line
+            with open(path, "r", encoding="utf-8") as handle:
+                result = json.load(handle)
+            question = result.get("search_query")
+            if question:
+                already[question] = path
+        except (OSError, json.JSONDecodeError, AttributeError):
+            traceback.print_exc()
+    return already
 
-            end_date = ""
-            if question in already:
-                print(f"pass: {already[question]}")
-                continue
 
-            dest_name = get_md5(question)
-            dest_file = os.path.join(output_folder, f"{dest_name}.json")
+def benchmark_end_date(row, enabled):
+    if not enabled:
+        return ""
+    published_time = (row.get("source_meta") or {}).get("published_time")
+    if not published_time:
+        return ""
+    return (
+        datetime.strptime(str(published_time), "%Y%m%d") - timedelta(days=7)
+    ).strftime("%Y%m%d")
 
-            sorted_docs = search_agent.search(question, end_date=end_date)
 
-            if "answer" in data:
-                search_agent.root.extra["answer"] = data["answer"]
+def main():
+    args = parse_args()
+    src_file = BENCHMARKS[args.benchmark]
+    output_folder = args.output_folder or default_output_folder(args)
+    os.makedirs(output_folder, exist_ok=True)
 
-            elif "data_result_add_score" in data:
+    selected_file = os.path.join(
+        "./benchmark",
+        f"{Path(src_file).stem}_select_{args.sample_num}_seed{args.seed}.jsonl",
+    )
+    rows = load_benchmark(src_file, args.sample_num, args.seed)
+    with open(selected_file, "w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    for source_file in SOURCE_FILES:
+        shutil.copy2(source_file, output_folder)
+
+    print(f"benchmark rows: {len(rows)}")
+    print(f"selected benchmark: {selected_file}")
+    print(f"output folder: {output_folder}")
+
+    search_agent = AcademicSearchTree(
+        max_depth=args.max_depth,
+        max_docs=args.max_docs,
+        similarity_threshold=args.score_thresh,
+    )
+    already = result_index(output_folder)
+
+    for row in tqdm(rows, desc="Processing queries"):
+        question = str(row.get("question") or row.get("query") or "")
+        if not question:
+            print("Skipping row without a question")
+            continue
+        if question in already:
+            print(f"pass: {already[question]}")
+            continue
+
+        destination = os.path.join(output_folder, f"{get_md5(question)}.json")
+        try:
+            search_agent.search(
+                question,
+                end_date=benchmark_end_date(row, args.use_end_date),
+            )
+            if "answer" in row:
+                search_agent.root.extra["answer"] = row["answer"]
+            elif (row.get("source_meta") or {}).get("answers"):
                 search_agent.root.extra["answer"] = [
-                    one["title"] for one in data["data_result_add_score"]
+                    answer.get("title", "")
+                    for answer in row["source_meta"]["answers"]
                 ]
 
-            if output_folder != "":
-                res = search_agent.root.convert_to_dict()
-                with open(dest_file, "w") as fw:
-                    json.dump(res, fw, indent=2)
+            with open(destination, "w", encoding="utf-8") as handle:
+                json.dump(
+                    search_agent.root.convert_to_dict(),
+                    handle,
+                    ensure_ascii=False,
+                    indent=2,
+                )
 
-            try:
-                print("draw search tree")
-                search_agent.visualize_tree(f"{output_folder}/{dest_name}")
-            except:
-                traceback.print_exc()
-                pass
-
-            # break
-
-        except:
+            if not args.skip_visualization:
+                try:
+                    search_agent.visualize_tree(os.path.splitext(destination)[0])
+                except Exception:
+                    traceback.print_exc()
+        except Exception:
             traceback.print_exc()
-            pass
 
-print(f"output_folder: {output_folder}")
+    print(f"output folder: {output_folder}")
+    print(
+        "evaluate with: python evaluate_spar.py "
+        f"--benchmark_file {selected_file} "
+        f"--results_folder {output_folder}"
+    )
+
+
+if __name__ == "__main__":
+    main()

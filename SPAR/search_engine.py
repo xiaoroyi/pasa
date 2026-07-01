@@ -895,7 +895,7 @@ class AcademicTreeSearchEngine:
             previous_year = current_year - 1
 
             # Determine the appropriate template based on query analysis
-            if FUSION_TEMP == "AUTOMATIC" and  self._is_survey_focused(intent):
+            if FUSION_TEMPLATE == "AUTOMATIC" and self._is_survey_focused(intent):
                 # For survey-focused queries, prioritize finding comprehensive reviews
                 logger.info(f"Using survey-focused expansion for query: {query}")
                 prompt = template_query_fusion_survery_forcus.format(
@@ -905,7 +905,7 @@ class AcademicTreeSearchEngine:
                     previous_year=previous_year,
                 )
                 prompt_type = "survey"
-            elif FUSION_TEMP == "AUTOMATIC" and self._is_complex_domain(domain):
+            elif FUSION_TEMPLATE == "AUTOMATIC" and self._is_complex_domain(domain):
                 # For queries in complex or specialized domains, use domain-aware expansion
                 logger.info(f"Using domain-aware expansion for query in {domain}")
                 prompt = template_domain_aware_query_expansion.format(
@@ -917,12 +917,12 @@ class AcademicTreeSearchEngine:
                     previous_year=previous_year,
                 )
                 prompt_type = "domain"
-            elif FUSION_TEMP == "PASA":
+            elif FUSION_TEMPLATE == "PASA":
                 # Use PASA template if explicitly configured
                 logger.info(f"Using PASA template for query expansion")
                 prompt = template_query_fusion_pasa.format(user_query=query)
                 prompt_type = "pasa"
-            elif FUSION_TEMP == "WITHEXPLAIN":
+            elif FUSION_TEMPLATE == "WITHEXPLAIN":
                 # Use withexplain template if explicitly configured
                 logger.info(f"Using withexplain for query: {query}")
                 prompt = (

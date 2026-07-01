@@ -34,7 +34,32 @@ pip install -r requirements.txt
    ```bash
    python3 run_spr_agent.py $benchname
    ```
-   Supported `benchname`: `OwnBenchmark` | `AutoScholarQuery`
+   Supported `benchname`: `SPARBench` | `OwnBenchmark` | `AutoScholarQuery`
+
+## Benchmark Evaluation
+
+Run a small benchmark first:
+
+```bash
+python3 run_spr_agent.py SPARBench \
+  --sample_num 3 \
+  --skip_visualization
+```
+
+The runner prints the exact selected JSONL file and result directory. Evaluate
+those paths so unfinished or missing queries are counted as empty predictions:
+
+```bash
+python3 evaluate_spar.py \
+  --benchmark_file benchmark/spar_bench_select_3_seed123.jsonl \
+  --results_folder gen_result/<printed-result-folder> \
+  --report_file gen_result/sparbench_report.json
+```
+
+The default `filtered` prediction set evaluates documents retained by SPAR's
+relevance filter. It reports the paper-compatible macro Precision, Recall, and
+F1, plus micro metrics and optional per-query details. Paper identifiers are
+matched first and normalized titles are used as a fallback.
 
 ##  Project Structure
 
